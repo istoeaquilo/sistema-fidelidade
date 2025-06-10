@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pesquisa de Satisfação</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --cor-vinho: #9A3324; --cor-amarelo: #D59A1D; }
+        body { font-family: 'Inter', sans-serif; }
+        .nps-score {
+            @apply w-12 h-12 flex items-center justify-center text-lg font-bold border-2 rounded-full cursor-pointer transition-all;
+        }
+        .nps-detractor { @apply border-red-500 text-red-600 hover:bg-red-100; }
+        .nps-passive { @apply border-yellow-500 text-yellow-600 hover:bg-yellow-100; }
+        .nps-promoter { @apply border-green-500 text-green-600 hover:bg-green-100; }
+        .nps-selected { @apply text-white; }
+        .nps-detractor.nps-selected { @apply bg-red-500 border-red-500; }
+        .nps-passive.nps-selected { @apply bg-yellow-500 border-yellow-500; }
+        .nps-promoter.nps-selected { @apply bg-green-500 border-green-500; }
+        .btn-primary { background-color: var(--cor-vinho); }
+        .btn-primary:hover { opacity: 0.9; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8 text-center">
+        <div id="survey-screen">
+            <img src="https://i.imgur.com/83uVBmy.png" alt="Logomarca Isto e aQuilo" class="h-20 mx-auto mb-4"/>
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-2">A sua opinião é muito importante!</h1>
+            <p class="text-gray-600 mb-6">Numa escala de 0 a 10, qual a probabilidade de nos recomendar a um amigo ou familiar?</p>
+            <div id="nps-container" class="flex flex-wrap justify-center gap-2 md:gap-3 mb-8"></div>
+            <div id="comment-section" class="hidden text-left">
+                 <label for="comment" class="block text-sm font-medium text-gray-700 mb-2">Quer partilhar o motivo da sua nota? (opcional)</label>
+                 <textarea id="comment" rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vinho"></textarea>
+            </div>
+            <button id="submit-nps-button" class="w-full md:w-auto mt-6 px-8 py-3 btn-primary text-white font-bold rounded-lg text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enviar Avaliação</button>
+        </div>
+        <div id="thank-you-screen" class="hidden">
+            <div id="thank-you-icon" class="mx-auto mb-4 text-6xl"></div>
+            <h2 id="thank-you-title" class="text-3xl font-bold mb-2"></h2>
+            <p id="thank-you-message" class="text-gray-600 text-lg mb-6"></p>
+            <div id="google-review-section" class="hidden">
+                 <a id="google-review-link" href="#" target="_blank" class="inline-block bg-amarelo text-vinho font-bold py-3 px-6 rounded-lg hover:opacity-90 transition-opacity">Avaliar no Google</a>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-fidelidade-app';
+        let db; let selectedScore = null; let unitId, checkinId, clienteId;
+        const surveyScreen = document.getElementById('survey-screen');
+        const thankYouScreen = document.getElementById('thank-you-screen');
+
+        async function initialize() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                unitId = urlParams.get('unitId'); checkinId = urlParams.get('checkinId'); clienteId = urlParams.get('clienteId');
+                if (!unitId || !checkinId || !clienteId) { showError("Link inválido. Por favor, aceda à pesquisa através do e-mail que recebeu."); return; }
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app); await signInAnonymously(getAuth(app));
+                renderNpsScores();
+                document.getElementById('submit-nps-button').disabled = true;
+                document.getElementById('submit-nps-button').onclick = handleSubmit;
+            } catch (error) { console.error("Erro na inicialização:", error); showError("Ocorreu um erro ao carregar a pesquisa."); }
+        }
+        function showError(message) { surveyScreen.innerHTML = `<p class="text-red-600 font-bold">${message}</p>`; }
+        function renderNpsScores() {
+            const container = document.getElementById('nps-container');
+            for (let i = 0; i <= 10; i++) {
+                const scoreEl = document.createElement('div');
+                scoreEl.textContent = i; scoreEl.dataset.score = i; scoreEl.classList.add('nps-score');
+                if (i <= 6) scoreEl.classList.add('nps-detractor'); else if (i <= 8) scoreEl.classList.add('nps-passive'); else scoreEl.classList.add('nps-promoter');
+                scoreEl.onclick = () => {
+                    document.querySelectorAll('.nps-score').forEach(el => el.classList.remove('nps-selected'));
+                    scoreEl.classList.add('nps-selected'); selectedScore = i;
+                    document.getElementById('comment-section').classList.remove('hidden');
+                    document.getElementById('submit-nps-button').disabled = false;
+                };
+                container.appendChild(scoreEl);
+            }
+        }
+        async function handleSubmit() {
+            if (selectedScore === null) return;
+            const btn = document.getElementById('submit-nps-button');
+            btn.disabled = true; btn.textContent = "A enviar...";
+            try {
+                const npsRef = doc(db, `artifacts/${appId}/public/data/restaurants/${unitId}/nps`, checkinId);
+                await setDoc(npsRef, { clienteId, checkinId, score: selectedScore, comment: document.getElementById('comment').value, dataResposta: serverTimestamp() });
+                const unitRef = doc(db, `artifacts/${appId}/public/data/restaurants/${unitId}`);
+                const unitDoc = await getDoc(unitRef);
+                const googleLink = unitDoc.exists() ? unitDoc.data().googleReviewLink : null;
+                showThankYouMessage(googleLink);
+            } catch (error) { console.error("Erro ao submeter NPS:", error); showError("Não foi possível enviar a sua avaliação. Tente novamente."); }
+        }
+        function showThankYouMessage(googleLink) {
+            surveyScreen.classList.add('hidden'); thankYouScreen.classList.remove('hidden');
+            const icon = document.getElementById('thank-you-icon'), title = document.getElementById('thank-you-title'), message = document.getElementById('thank-you-message'), googleSection = document.getElementById('google-review-section');
+            if (selectedScore >= 9) {
+                icon.innerHTML = '😍'; title.textContent = "Uau! Muito obrigado!"; title.className += ' text-green-500';
+                message.innerHTML = "Ficamos extremamente felizes com a sua nota! A sua opinião ajuda-nos a crescer. <br>Se tiver um momento, uma avaliação na nossa página do Google faria toda a diferença para nós.";
+                if(googleLink) { googleSection.classList.remove('hidden'); document.getElementById('google-review-link').href = googleLink; }
+            } else if (selectedScore > 6) {
+                icon.innerHTML = '😊'; title.textContent = "Obrigado pela sua avaliação!"; title.className += ' text-yellow-500';
+                message.textContent = "A sua opinião é muito importante para continuarmos a melhorar os nossos serviços.";
+            } else {
+                icon.innerHTML = '😔'; title.textContent = "Lamentamos a sua experiência."; title.className += ' text-red-500';
+                message.textContent = "Obrigado por partilhar. Iremos analisar o seu feedback com muita atenção para podermos melhorar.";
+            }
+        }
+        initialize();
+    </script>
+</body>
+</html>
