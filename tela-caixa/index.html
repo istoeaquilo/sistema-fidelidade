@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resgate de Prémio - Fidelidade</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --cor-vinho: #9A3324; --cor-amarelo: #D59A1D; }
+        body { font-family: 'Inter', sans-serif; }
+        .btn-primary { background-color: var(--cor-vinho); }
+        .btn-primary:hover { opacity: 0.9; }
+        .form-input:focus { border-color: var(--cor-vinho); box-shadow: 0 0 0 2px var(--cor-vinho); }
+        .loader { border-top-color: var(--cor-vinho); animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-lg mx-auto">
+        <div id="main-content" class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg text-center">
+            <img src="https://i.imgur.com/83uVBmy.png" alt="Logomarca Isto e aQuilo" class="h-20 mx-auto mb-4"/>
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">Resgate de Prémio</h1>
+            <p class="text-gray-600 mb-6">Insira o celular do cliente para consulta.</p>
+            <div class="flex space-x-2">
+                <input type="tel" id="celular-input" maxLength="11" placeholder="Nº de celular com DDD" class="form-input flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none" />
+                <button id="buscar-btn" class="px-6 py-3 btn-primary text-white font-bold rounded-lg disabled:opacity-50">Buscar</button>
+            </div>
+            <div id="result-container" class="mt-6 min-h-[150px]"></div>
+        </div>
+    </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, query, where, collection, getDocs, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-fidelidade-app';
+        
+        let db;
+        let RESTAURANT_ID;
+
+        const mainContent = document.getElementById('main-content');
+        const celularInput = document.getElementById('celular-input');
+        const buscarBtn = document.getElementById('buscar-btn');
+        const resultContainer = document.getElementById('result-container');
+
+        async function initialize() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    throw new Error("A configuração do Firebase não foi encontrada.");
+                }
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                await signInAnonymously(getAuth(app));
+
+                const urlParams = new URLSearchParams(window.location.search);
+                let unitIdFromUrl = urlParams.get('unitId');
+
+                if (unitIdFromUrl) {
+                    RESTAURANT_ID = unitIdFromUrl;
+                } else {
+                    // Fallback para o ambiente de teste: busca a primeira unidade disponível
+                    console.log("Nenhum ID de unidade na URL, a tentar buscar a primeira disponível...");
+                    const restaurantsColRef = collection(db, `artifacts/${appId}/public/data/restaurants`);
+                    const snapshot = await getDocs(query(restaurantsColRef));
+                    if (snapshot.empty) {
+                        throw new Error("Nenhuma unidade de restaurante encontrada. Por favor, crie uma no painel de administração primeiro.");
+                    }
+                    RESTAURANT_ID = snapshot.docs[0].id;
+                    console.log(`Unidade de fallback definida para: ${RESTAURANT_ID}`);
+                }
+
+                buscarBtn.addEventListener('click', buscarCliente);
+                celularInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') buscarCliente(); });
+
+            } catch (error) {
+                console.error(error);
+                mainContent.innerHTML = `<div class="p-6 sm:p-8 text-center"><h1 class="text-2xl font-bold text-red-600 mb-2">Erro de Configuração</h1><p class="text-gray-600">${error.message}</p></div>`;
+            }
+        }
+
+        function displayMessage(type, title, text) {
+            const colors = { error: 'bg-red-100 text-red-700', success: 'bg-green-100 text-green-700', info: 'bg-blue-100 text-blue-700' };
+            resultContainer.innerHTML = `<div class="p-4 rounded-lg ${colors[type]}"><p class="font-bold">${title}</p><p>${text}</p></div>`;
+        }
+
+        function showLoading(isLoading) {
+            buscarBtn.disabled = isLoading;
+            if (isLoading) buscarBtn.innerHTML = `<div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-6 w-6 mx-auto"></div>`;
+            else buscarBtn.textContent = 'Buscar';
+        }
+
+        async function buscarCliente() {
+            const celular = celularInput.value.replace(/\D/g, '');
+            if (celular.length !== 11) { displayMessage('error', 'Atenção', 'O celular deve ter 11 dígitos.'); return; }
+            showLoading(true);
+            resultContainer.innerHTML = '';
+            try {
+                const basePath = `artifacts/${appId}/public/data/restaurants/${RESTAURANT_ID}`;
+                const clienteDoc = await getDoc(doc(db, `${basePath}/clientes`, celular));
+                if (!clienteDoc.exists()) { displayMessage('error', 'Não Encontrado', 'Este número de celular não possui cadastro.'); return; }
+                const clienteData = { id: clienteDoc.id, ...clienteDoc.data() };
+                const q = query(collection(db, `${basePath}/recompensas`), where("clienteId", "==", clienteData.id), where("status", "==", "disponivel"));
+                const recompensaSnapshot = await getDocs(q);
+                if (recompensaSnapshot.empty) { displayMessage('info', `Cliente: ${clienteData.nome}`, 'Nenhum prémio disponível para resgate.'); } 
+                else { renderRecompensa(clienteData, { id: recompensaSnapshot.docs[0].id, ...recompensaSnapshot.docs[0].data() }); }
+            } catch (err) { console.error(err); displayMessage('error', 'Erro de Sistema', 'Ocorreu um problema na busca.'); } 
+            finally { showLoading(false); }
+        }
+
+        function renderRecompensa(cliente, recompensa) {
+            resultContainer.innerHTML = `<div class="p-4 border-2 border-dashed border-green-400 rounded-lg"><h3 class="text-xl font-bold text-gray-800">${cliente.nome}</h3><p class="text-green-600 font-semibold my-2 text-lg">Prémio Disponível!</p><button id="resgatar-btn" class="w-full mt-2 px-6 py-3 bg-green-500 text-white font-bold rounded-md hover:bg-green-600 disabled:bg-green-300">Confirmar Resgate de Prémio</button></div>`;
+            document.getElementById('resgatar-btn').addEventListener('click', () => resgatarPremio(recompensa.id));
+        }
+
+        async function resgatarPremio(recompensaId) {
+            const resgatarBtn = document.getElementById('resgatar-btn');
+            resgatarBtn.disabled = true; resgatarBtn.textContent = 'A resgatar...';
+            try {
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/restaurants/${RESTAURANT_ID}/recompensas`, recompensaId), { status: 'utilizada', dataResgate: serverTimestamp() });
+                displayMessage('success', 'Sucesso!', 'A recompensa foi resgatada.');
+                celularInput.value = '';
+            } catch (err) { console.error(err); displayMessage('error', 'Erro', 'Não foi possível resgatar o prémio.'); resgatarBtn.disabled = false; resgatarBtn.textContent = 'Confirmar Resgate de Prémio'; }
+        }
+
+        initialize();
+    </script>
+</body>
+</html>
