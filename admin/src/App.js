@@ -18,7 +18,7 @@ import {
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // --- Configuração do Firebase ---
-// Corrigido para ler variáveis globais, com um fallback seguro.
+// Lógica corrigida para ler as variáveis globais de forma segura
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-fidelidade-app';
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -462,7 +462,11 @@ export default function App() {
 
     useEffect(() => {
         try {
-            if (Object.keys(firebaseConfig).length === 0) { console.error("Configuração do Firebase não encontrada."); return; }
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.error("Configuração do Firebase não encontrada. Verifique as variáveis de ambiente.");
+                setIsAuthReady(false); // Impede o resto da app de carregar
+                return; 
+            }
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             const auth = getAuth(app);
@@ -471,7 +475,10 @@ export default function App() {
                 setIsAuthReady(true);
             };
             performAuth();
-        } catch (error) { console.error("Erro na inicialização do Firebase no Admin:", error); }
+        } catch (error) { 
+            console.error("Erro na inicialização do Firebase no Admin:", error);
+            setIsAuthReady(false);
+        }
     }, []);
 
     useEffect(() => {
