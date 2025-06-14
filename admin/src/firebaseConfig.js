@@ -1,16 +1,18 @@
 // admin/src/firebaseConfig.js
 
-// IMPORTANTE: Substitua os valores abaixo pelos da sua conta do Firebase.
-// Esta é a maneira mais robusta de garantir que a sua aplicação se conecta corretamente.
+// Esta é a forma correta e segura de carregar as configurações.
+// A aplicação irá ler as variáveis de ambiente fornecidas pela Netlify.
 
-export const firebaseConfig = {
-  apiKey: "AIzaSyAcaqKBWMOX3vIrdzi5AirPsOKxuJcHryo",
-  authDomain: "fidelidade-isto-e-aquilo.firebaseapp.com",
-  projectId: "fidelidade-isto-e-aquilo",
-  storageBucket: "fidelidade-isto-e-aquilo.firebasestorage.app",
-  messagingSenderId: "347388047322",
-  appId: "1:347388047322:web:94c959a19f6b81b75bdae3"
-};
+let config;
+try {
+  // Para o ambiente de deploy (Netlify), as variáveis são injetadas via process.env
+  // O Netlify exige o prefixo REACT_APP_
+  config = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG || '{}');
+} catch (e) {
+  console.error("Erro ao analisar a configuração do Firebase a partir das variáveis de ambiente.", e);
+  config = {};
+}
 
-export const appId = "fidelidade-isto-e-aquilo";
-export const initialAuthToken = null;
+export const firebaseConfig = config;
+export const appId = process.env.REACT_APP_APP_ID || 'default-fidelidade-app';
+export const initialAuthToken = null; // Token não é usado nesta fase.

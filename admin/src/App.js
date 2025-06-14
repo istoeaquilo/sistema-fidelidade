@@ -18,7 +18,7 @@ import {
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // --- Configuração do Firebase ---
-// Lógica corrigida para ler as variáveis globais de forma segura
+// Esta é a forma correta e segura de ler a configuração do ambiente.
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-fidelidade-app';
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -459,13 +459,12 @@ export default function App() {
     const [restaurants, setRestaurants] = useState([]);
     const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
     const [loadingRestaurants, setLoadingRestaurants] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         try {
             if (Object.keys(firebaseConfig).length === 0) {
-                console.error("Configuração do Firebase não encontrada. Verifique as variáveis de ambiente.");
-                setIsAuthReady(false); // Impede o resto da app de carregar
-                return; 
+                throw new Error("Configuração do Firebase não foi encontrada. Verifique as variáveis de ambiente na Netlify ou o ficheiro de configuração local.");
             }
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
@@ -475,9 +474,9 @@ export default function App() {
                 setIsAuthReady(true);
             };
             performAuth();
-        } catch (error) { 
-            console.error("Erro na inicialização do Firebase no Admin:", error);
-            setIsAuthReady(false);
+        } catch (e) { 
+            console.error("Erro na inicialização do Firebase no Admin:", e);
+            setError(e.message);
         }
     }, []);
 
@@ -497,6 +496,7 @@ export default function App() {
             setLoadingRestaurants(false);
         }, (err) => {
             console.error("Erro ao buscar unidades:", err);
+            setError("Não foi possível carregar os dados das unidades.");
             setLoadingRestaurants(false);
         });
         return () => unsubscribe();
@@ -506,6 +506,10 @@ export default function App() {
     const handleAddRestaurant = async (restaurantName) => { await addDoc(collection(db, `artifacts/${appId}/public/data/restaurants`), { nome: restaurantName, googleReviewLink: '' }); };
     const handleUpdateRestaurant = async (id, data) => { const restRef = doc(db, `artifacts/${appId}/public/data/restaurants`, id); await updateDoc(restRef, data); };
     
+    if (error) {
+        return <div className="p-8 text-center text-red-500 font-bold">Erro: {error}</div>;
+    }
+
     if (!isAuthReady) {
         return (<div className="flex justify-center items-center h-screen bg-gray-100"><div className="text-center"><Loader /><p className="mt-4 text-gray-600">A autenticar e carregar dados...</p></div></div>);
     }
